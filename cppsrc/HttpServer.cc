@@ -160,7 +160,7 @@ auto HttpServer::getInstance() -> HttpServer&
 
 /* -------------------------------------------------------------------------- */
 
-bool HttpServer::bind(TranspPort port)
+bool HttpServer::bind(const std::string& host, TranspPort port)
 {
     _tcpServer = TcpListener::create();
 
@@ -168,7 +168,7 @@ bool HttpServer::bind(TranspPort port)
         return false;
     }
 
-    return _tcpServer->bind(port);
+    return _tcpServer->bind(host, port);
 }
 
 

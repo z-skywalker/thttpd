@@ -11,6 +11,7 @@
 
 #include "HttpServer.h"
 #include "Tools.h"
+#include "WinService.h"
 
 #include <iostream>
 #include <string>
@@ -25,6 +26,7 @@ private:
     std::string _webRootPath = HTTP_SERVER_WROOT;
 
     TcpSocket::TranspPort _http_server_port = HTTP_SERVER_PORT;
+    std::string _http_server_host;
     
     bool _show_help = false;
     bool _show_ver = false;
@@ -55,6 +57,10 @@ public:
         return _http_server_port;
     }
 
+    const std::string &get_http_server_host() const {
+        return _http_server_host;
+    }
+
 
     bool is_good() const { 
        return !_error; 
@@ -78,6 +84,7 @@ public:
 
         os << "Usage:\n";
         os << "\t" << get_prog_name() << "\n";
+        os << "\t\t-h | --host <host>\n";
         os << "\t\t-p | --port <port>\n";
         os << "\t\t\tBind server to a TCP port number (default is "
            << HTTP_SERVER_PORT << ") \n";
@@ -110,7 +117,7 @@ public:
         if (argc <= 1)
             return;
 
-        enum class State { OPTION, PORT, WEBROOT } state = State::OPTION;
+        enum class State { OPTION, HOST, PORT, WEBROOT } state = State::OPTION;
 
         for (int idx = 1; idx < argc; ++idx) {
             std::string sarg = argv[idx];
@@ -122,6 +129,8 @@ public:
             case State::OPTION:
                 if (sarg == "--port" || sarg == "-p") {
                     state = State::PORT;
+                } else if (sarg == "--host" || sarg == "-h") {
+                    state = State::HOST;
                 } else if (sarg == "--webroot" || sarg == "-w") {
                     state = State::WEBROOT;
                 } else if (sarg == "--help" || sarg == "-h") {
@@ -150,10 +159,70 @@ public:
                 _http_server_port = std::stoi(sarg);
                 state = State::OPTION;
                 break;
+
+            case State::HOST:
+                _http_server_host = sarg;
+                state = State::OPTION;
+                break;
             }
         }
     }
 };
+
+
+int ServProc(int argc, char *argv[])
+{
+    WinService::GetInstance().SetCurrentState(SERVICE_RUNNING);
+
+    HttpServer& httpsrv = HttpServer::getInstance();
+
+    if (!httpsrv.run()) {
+        std::cerr << "Error starting the server\n";
+        return 1;
+    }
+
+    return 0;
+}
+
+
+DWORD ServiceCtrlHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+{
+    switch (dwControl) {
+
+    case SERVICE_CONTROL_INTERROGATE: return NO_ERROR;
+
+    case SERVICE_CONTROL_SHUTDOWN:
+    case SERVICE_CONTROL_STOP:
+
+        GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+
+        WinService::GetInstance().SetCurrentState(SERVICE_STOPPED, 1000);
+
+        return NO_ERROR;
+
+    default: return ERROR_CALL_NOT_IMPLEMENTED;
+    }
+}
+
+void ServiceMain(DWORD argc, LPSTR argv[])
+{
+    auto result = WinService::GetInstance().RegCtrlHandler("Tiny Http Server", ServiceCtrlHandler, nullptr);
+    if (result != ERROR_SUCCESS) return;
+
+    result = WinService::GetInstance().SetCurrentState(SERVICE_START_PENDING, 1000);
+    if (result != ERROR_SUCCESS) return;
+
+    ServProc(argc, argv);
+}
+
+int RunAsService(int argc, char *argv[])
+{
+    auto result = WinService::GetInstance().SetServiceMain(ServiceMain);
+
+    if (result != ERROR_SUCCESS) return 1;
+
+    return 0;
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -191,7 +260,7 @@ int main(int argc, char* argv[])
 
     httpsrv.setupWebRootPath(args.getWebRootPath());
 
-    bool res = httpsrv.bind(args.get_http_server_port());
+    bool res = httpsrv.bind(args.get_http_server_host(), args.get_http_server_port());
 
     if (!res) {
         std::cerr << "Error binding server port " << args.get_http_server_port()
@@ -214,10 +283,7 @@ int main(int argc, char* argv[])
 
     httpsrv.setupLogger(args.verboseModeOn() ? &std::clog : nullptr);
 
-    if (!httpsrv.run()) {
-        std::cerr << "Error starting the server\n";
-        return 1;
-    }
+    RunAsService(argc, argv);
 
     return 0;
 }

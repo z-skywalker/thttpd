@@ -101,7 +101,7 @@ public:
      * @param port listening port
      * @return true if operation is successfully completed, false otherwise
      */
-    bool bind(TranspPort port = DEFAULT_PORT);
+    bool bind(const std::string& host, TranspPort port = DEFAULT_PORT);
 
     /**
      * Sets the server in listening mode
